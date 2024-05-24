@@ -139,6 +139,20 @@ const msg = {
   },
 };
 
+router.get('/', async (req: Request, res: Response) => {
+  let response = [];
+  db.all(`SELECT * FROM Players`, async (err, rows: Player[]) => {
+    if (err) {
+      return console.error(err.message);
+    }
+    for (let index = 0; index < rows.length; index++) {
+      const row: Player = rows[index];
+      response.push({ playerId: row.playerId, playerName: row.playerName, message: "", code: ""})
+    }
+    res.send(response)
+  });
+});
+
 router.get('/send/:giftCode', async (req: Request, res: Response) => {
   const giftCode = req.params.giftCode;
   db.all(`SELECT * FROM Players`, async (err, rows: Player[]) => {
