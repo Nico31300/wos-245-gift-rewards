@@ -151,7 +151,7 @@ router.get('/initDb', async (req: Request, res: Response) => {
 });
 
 router.get('/players', async (req: Request, res: Response) => {
-  const { rows } = await sql`SELECT * FROM Players;`;
+  const { rows } = await sql`SELECT * FROM Players ORDER BY player_id;`;
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index];
@@ -192,7 +192,7 @@ router.get('/send/:giftCode', async (req: Request, res: Response) => {
   }
   let response: APIResponse[] = [];
   let resetAt: Date = new Date();
-  const { rows } = await sql`SELECT * FROM players where last_message not like ${`%${giftCode}%`} or last_message is null`;
+  const { rows } = await sql`SELECT * FROM players where last_message not like ${`%${giftCode}%`} or last_message is null ORDER BY player_id`;
 
   let cdkNotFound = false;
   let tooManyAttempts = false;
