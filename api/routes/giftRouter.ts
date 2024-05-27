@@ -2,8 +2,6 @@ import express, { Request, Response } from 'express';
 import crypto, { BinaryLike } from "crypto";
 import axios, { AxiosError } from "axios";
 import { sql } from '@vercel/postgres';
-import path from 'path';
-const db_name = path.join(__dirname, "..", "data", "wos.db");
 const router = express.Router();
 const hash = "tB87#kPtkxqOS2";
 
