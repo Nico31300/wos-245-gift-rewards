@@ -70,7 +70,7 @@ const md5 = (text: BinaryLike) => {
  * @param Player ID
  * @returns 
  */
-const signIn = async (fid: Number): Promise<signInResponse> => {
+const signIn = async (fid: number): Promise<signInResponse> => {
   const time = new Date().getTime();
   const params = new URLSearchParams();
   params.append(
@@ -201,7 +201,10 @@ router.get('/send/:giftCode', async (req: Request, res: Response) => {
     const row = rows[index];
     if (!tooManyAttempts) {
       try {
-        await signIn(row.player_id)
+        const signInResponse = await signIn(row.player_id)
+        if (signInResponse.data.nickname !== row.player_name) {
+          await sql`UPDATE players SET player_name = ${signInResponse.data.nickname } WHERE WHERE player_id = ${row.player_id.toString()};`
+        }
         const giftResponse = await sendGiftCode(row.player_id, giftCode)
         if (msg[giftResponse.err_code as msgKey].err_code === 40014) //Gift code does not exist
         {
