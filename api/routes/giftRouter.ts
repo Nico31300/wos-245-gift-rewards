@@ -191,6 +191,7 @@ router.get('/send/:giftCode', async (req: Request, res: Response) => {
     code: String;
   }
   let response: APIResponse[] = [];
+  let resetAt: Date = new Date();
   const { rows } = await sql`SELECT * FROM players where last_message not like ${`%${giftCode}%`} or last_message is null`;
 
   let cdkNotFound = false;
@@ -219,15 +220,21 @@ router.get('/send/:giftCode', async (req: Request, res: Response) => {
           case 429: //Too Many Requests
             const ratelimitReset = error?.response?.headers['x-ratelimit-reset'];
             console.log(`Request at ${new Date()}`);
-            console.log(`Reseted at ${new Date(ratelimitReset * 1000)}`);
+            console.log(`Reseted at ${resetAt}`);
+            resetAt = new Date(ratelimitReset * 1000);
             tooManyAttempts = true;
             break;
           default:
             console.log(e);
             break;
         }
-        await sql`UPDATE Players SET last_message = ${`${error.code}:${error.message}`} WHERE player_id = ${row.player_id}`;
+        const resetIn = Math.floor(( resetAt.getTime() - new Date().getTime()) / 1000); //time in seconds
+        await sql`UPDATE Players SET last_message = ${`Too many attempts: Retry in ${resetIn} seconds(${resetAt.toLocaleTimeString()})`} WHERE player_id = ${row.player_id}`;
       }
+    }
+    else{
+      const resetIn = Math.floor(( resetAt.getTime() - new Date().getTime()) / 1000); //time in seconds
+      await sql`UPDATE Players SET last_message = ${`Too many attempts: Retry in ${resetIn} seconds(${resetAt.toLocaleTimeString()})`} WHERE player_id = ${row.player_id}`;
     }
   }
   if (cdkNotFound === false) {
