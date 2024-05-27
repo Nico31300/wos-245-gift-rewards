@@ -1,20 +1,15 @@
 import express, { Request, Response } from 'express';
 import crypto, { BinaryLike } from "crypto";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import sqlite3 from 'sqlite3';
 import path from 'path';
 const db_name = path.join(__dirname, "..", "data", "wos.db");
-const db = new sqlite3.Database(db_name, (err) => {
-  if (err) {
-    return console.error(err.message);
-  }
-});
 const router = express.Router();
 const hash = "tB87#kPtkxqOS2";
 type Player = {
   playerId: Number,
   playerName: String,
-  furnaceLevel: Number,
+  furnaceLevel?: Number,
   lastMessage: String
 }
 
@@ -40,6 +35,34 @@ type WosResponse = {
   msg: String;
   err_code: Number;
 }
+
+type msgKey = keyof typeof msg;
+const msg = {
+  40007: {
+    code: 1,
+    msg: "TIME ERROR.",
+    err_code: 40007,
+    descr: "Gift code expired.",
+  },
+  40014: {
+    code: 1,
+    msg: "CDK NOT FOUND.",
+    err_code: 40014,
+    descr: "Gift code does not exist.",
+  },
+  40008: {
+    code: 1,
+    msg: "RECEIVED.",
+    err_code: 40008,
+    descr: "Gift code already used.",
+  },
+  40010: {
+    code: 0,
+    msg: "SUCCESS",
+    err_code: 20000,
+    descr: "Gift code send.",
+  },
+};
 
 /**
  * 
@@ -111,51 +134,79 @@ const sendGiftCode = async (fid: Number, giftCode: String) => {
   return response.data;
 };
 
-type msgKey = keyof typeof msg;
-const msg = {
-  40007: {
-    code: 1,
-    msg: "TIME ERROR.",
-    err_code: 40007,
-    descr: "Gift code expired.",
-  },
-  40014: {
-    code: 1,
-    msg: "CDK NOT FOUND.",
-    err_code: 40014,
-    descr: "Gift code does not exist.",
-  },
-  40008: {
-    code: 1,
-    msg: "RECEIVED.",
-    err_code: 40008,
-    descr: "Gift code already used.",
-  },
-  40010: {
-    code: 0,
-    msg: "SUCCESS",
-    err_code: 20000,
-    descr: "Gift code send.",
-  },
-};
-
 router.get('/', async (req: Request, res: Response) => {
-  let response = [];
+  const db = new sqlite3.Database(db_name, (err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
   db.all(`SELECT * FROM Players`, async (err, rows: Player[]) => {
     if (err) {
       return console.error(err.message);
     }
     for (let index = 0; index < rows.length; index++) {
       const row: Player = rows[index];
-      response.push({ playerId: row.playerId, playerName: row.playerName, message: "", code: ""})
+      res.write(`${row.playerName}(${row.playerId}): ${row.lastMessage} <br/>`)
     }
-    res.send(response)
+    res.end()
   });
+  db.close()
+});
+
+router.get('/remove/:playerId', async (req: Request, res: Response) => {
+  const playerId = req.params.playerId;
+  const db = new sqlite3.Database(db_name, (err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+  db.run(`DELETE FROM Players WHERE playerId=?`, playerId, function (err) {
+    if (err) {
+      res.send(err.message)
+      return
+    }
+    res.send("Player removed from database")
+  });
+  db.close()
+});
+
+router.get('/add/:playerId', async (req: Request, res: Response) => {
+  const playerId = req.params.playerId;
+  let playerName: String = "";
+  const db = new sqlite3.Database(db_name, (err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+  try {
+    const signInResponse = await signIn(parseInt(playerId));
+    playerName = signInResponse.data.nickname;
+    if (signInResponse.data.kid === 245) {
+      db.run(`INSERT INTO Players(playerId, playerName) VALUES(?, ?)`, [parseInt(playerId), playerName], function (err) {
+        if (err) {
+          return console.log(err.message);
+        }
+        res.send(`Player ${playerName} inserted into database`)
+      });
+    }
+  } catch (error) {
+    console.log(error);
+  }
+  db.close()
 });
 
 router.get('/send/:giftCode', async (req: Request, res: Response) => {
   const giftCode = req.params.giftCode;
-  db.all(`SELECT * FROM Players`, async (err, rows: Player[]) => {
+  const sql = `UPDATE Players
+            SET lastMessage = ?
+            WHERE playerId = ?`;
+  const db = new sqlite3.Database(db_name, (err) => {
+    if (err) {
+      return console.error(err.message);
+    }
+  });
+  db.all(`SELECT * FROM Players where lastMessage not like '%${giftCode}%' or lastMessage is null`, async (err, rows: Player[]) => {
     if (err) {
       return console.error(err.message);
     }
@@ -168,24 +219,57 @@ router.get('/send/:giftCode', async (req: Request, res: Response) => {
     let response: APIResponse[] = [];
 
     let cdkNotFound = false;
+    let tooManyAttempts = false;
     for (let index = 0; index < rows.length; index++) {
       const row: Player = rows[index];
-      const signInResponse = await signIn(row.playerId)
-      console.log(signInResponse);
-      const giftResponse = await sendGiftCode(row.playerId, giftCode)
-      console.log(giftResponse);
-      if (msg[giftResponse.err_code as msgKey].err_code === 40014) {
-        cdkNotFound = true;
-        res.send({
-          code: giftCode,
-          message: msg[giftResponse.err_code as msgKey].descr
-        })
-        break;
+      if (!tooManyAttempts) {
+        try {
+          const signInResponse = await signIn(row.playerId)
+          console.log(signInResponse);
+          const giftResponse = await sendGiftCode(row.playerId, giftCode)
+          console.log(giftResponse);
+          if (msg[giftResponse.err_code as msgKey].err_code === 40014) {
+            cdkNotFound = true;
+            res.send({
+              code: giftCode,
+              message: msg[giftResponse.err_code as msgKey].descr
+            })
+            break;
+          }
+          response.push({ playerId: row.playerId, playerName: row.playerName, message: msg[giftResponse.err_code as msgKey].descr, code: giftCode })
+          const data = [`${giftCode}: ${msg[giftResponse.err_code as msgKey].descr}`, row.playerId];
+          db.run(sql, data, function (err) {
+            if (err) {
+              return console.error(err.message);
+            }
+            console.log(`${row.playerName} updated: ${this.changes} rows`);
+          });
+        } catch (e) {
+          const error = e as AxiosError;
+          switch (error.response?.status) {
+            case 429: //Too Many Requests
+              const ratelimitReset = error?.response?.headers['x-ratelimit-reset'];
+              console.log(`Request at ${new Date()}`);
+              console.log(`Reseted at ${new Date(ratelimitReset * 1000)}`);
+              tooManyAttempts = true;
+              break;
+            default:
+              console.log(e);
+              break;
+          }
+          const data = [`${error.code}: ${error.message}`];
+          db.run(sql, data, function (err) {
+            if (err) {
+              return console.error(err.message);
+            }
+            console.log(`${row.playerName} updated: ${this.changes} rows`);
+          });
+        }
       }
-      response.push({ playerId: row.playerId, playerName: row.playerName, message: msg[giftResponse.err_code as msgKey].descr, code: giftCode})
     }
-    if(cdkNotFound === false){
-      res.send(response)
+    if (cdkNotFound === false) {
+      db.close();
+      res.send(response);
     }
   });
 });
