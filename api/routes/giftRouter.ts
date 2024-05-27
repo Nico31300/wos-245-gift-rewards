@@ -135,6 +135,20 @@ const sendGiftCode = async (fid: Number, giftCode: String) => {
 };
 
 router.get('/', async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.write(`<!DOCTYPE html> <html lang="en"> <head> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1"> <title>State 245: Rewards</title> </head> <body>`)
+  res.write('<h1>State 245 rewards: Available pages</h1>')
+  res.write('- Database players <a href="/players">/players</a><br/>')
+  res.write('- Send a reward <a href="/send/giftcode">/send/[giftcode]</a><br/>')
+  res.write('- Add a player <a href="/add/playerId">/add/[playerId]</a><br/>')
+  res.write('- Remove a player <a href="/remove/playerId">/remove/[playerId]</a><br/>')
+  res.write('<br/><u>Note:</u> The website wos-giftcode-api.centurygame.com has a rate limit of 30 calls by minutes. So maybe the request must be sent several times. Just wait to execute it again.<br/>')
+  res.write('<br/><a href="https://github.com/Nico31300/wos-245-gift-rewards">Github repository</a>')
+  res.write(`</body> </html>`)
+  res.end();
+});
+
+router.get('/players', async (req: Request, res: Response) => {
   const db = new sqlite3.Database(db_name, (err) => {
     if (err) {
       return console.error(err.message);
@@ -189,6 +203,10 @@ router.get('/add/:playerId', async (req: Request, res: Response) => {
         }
         res.send(`Player ${playerName} inserted into database`)
       });
+    }
+    else
+    {
+      res.send(`Only player from state 245 are allowed`)
     }
   } catch (error) {
     console.log(error);
